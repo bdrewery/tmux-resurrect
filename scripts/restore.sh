@@ -370,6 +370,31 @@ cleanup_restored_pane_contents() {
 	fi
 }
 
+# restore_window_properties feeds select-layout the saved layout string, which
+# carries absolute cell geometry.  Restoring into a client smaller than the one
+# that saved it leaves panes sized for the old terminal: a pane ends up wider
+# and taller than the window holding it, so the shell prompt sits below the
+# visible area.  tmux does not correct this by itself -- not on refresh-client,
+# and not on detach and reattach, because neither changes the client size.
+#
+# Force the re-fit, then drop the window-local window-size that resize-window
+# sets as a side effect, so the window goes back to following the global policy.
+# The resize is also what repaints restored pane contents: tmux reflows on a
+# width change, so lines captured at the old width rewrap correctly.
+#
+# Nearest upstream report is
+# https://github.com/tmux-plugins/tmux-resurrect/issues/195 (panes not matching
+# the current client after restore).  It is not the same reproduction and there
+# is no upstream fix.
+refit_restored_windows() {
+	local window
+	tmux list-windows -a -F '#{session_name}:#{window_index}' |
+		while read -r window; do
+			tmux resize-window -t "$window" -A
+			tmux set-window-option -t "$window" -u window-size
+		done
+}
+
 main() {
 	if supported_tmux_version_ok && check_saved_session_exists; then
 		start_spinner "Restoring..." "Tmux restore complete!"
@@ -386,6 +411,7 @@ main() {
 		restore_active_and_alternate_windows
 		restore_active_and_alternate_sessions
 		cleanup_restored_pane_contents
+		refit_restored_windows
 		execute_hook "post-restore-all"
 		stop_spinner
 		display_message "Tmux restore complete!"
