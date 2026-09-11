@@ -228,8 +228,21 @@ dump_state() {
 
 dump_pane_contents() {
 	local pane_contents_area="$(get_tmux_option "$pane_contents_area_option" "$default_pane_contents_area")"
+	# Option name and mechanism adapted from josh-stephens' unmerged
+	# https://github.com/tmux-plugins/tmux-resurrect/pull/583.  The name is
+	# kept identical deliberately: if that lands upstream, configs setting it
+	# keep working without change.
+	local capture_depth="$(get_tmux_option "$capture_depth_option" "$default_capture_depth")"
+	# Reject anything non-numeric here rather than letting every pane's test
+	# below fail: an unusable value means "no cap", same as the default.
+	case "$capture_depth" in
+	''|*[!0-9]*) capture_depth=0 ;;
+	esac
 	dump_panes_raw |
 		while IFS=$d read line_type session_name window_number window_active window_flags pane_index pane_title dir pane_active pane_command pane_pid history_size; do
+			if [ "$capture_depth" -gt 0 ] && [ "$history_size" -gt "$capture_depth" ]; then
+				history_size="$capture_depth"
+			fi
 			capture_pane_contents "${session_name}:${window_number}.${pane_index}" "$history_size" "$pane_contents_area"
 		done
 }

@@ -38,6 +38,12 @@ pane_contents_option="@resurrect-capture-pane-contents"
 pane_contents_area_option="@resurrect-pane-contents-area"
 default_pane_contents_area="full"
 
+# Upper bound on the scrollback lines saved per pane, independent of
+# history-limit: 'full' otherwise captures every pane's entire history, which
+# is the dominant cost of a save.  0 keeps the full history.
+capture_depth_option="@resurrect-capture-depth"
+default_capture_depth="0"
+
 # set to 'on' to ensure panes are never ever overwritten
 overwrite_option="@resurrect-never-overwrite"
 
