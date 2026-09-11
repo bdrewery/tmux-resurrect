@@ -39,7 +39,15 @@ pane_format() {
 	format+="${delimiter}"
 	format+="#{pane_index}"
 	format+="${delimiter}"
-	format+="#{pane_title}"
+	# ':' guard: pane_title may legitimately be empty, and the readers below
+	# split on IFS=$'\t'.  Tab is IFS whitespace, so a run of tabs collapses
+	# into one separator and every later field shifts left by one.  Titles go
+	# empty when a program sets one via OSC 2 and clears it on exit.
+	#
+	# Reported upstream repeatedly and still unmerged.  The identical ':' fix
+	# is https://github.com/tmux-plugins/tmux-resurrect/pull/583; see also
+	# pull/564, pull/581, pull/520, and the abandoned pull/582 and pull/570.
+	format+=":#{pane_title}"
 	format+="${delimiter}"
 	format+=":#{pane_current_path}"
 	format+="${delimiter}"

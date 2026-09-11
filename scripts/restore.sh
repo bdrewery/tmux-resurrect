@@ -178,6 +178,13 @@ restore_pane() {
 	while IFS=$d read line_type session_name window_number window_active window_flags pane_index pane_title dir pane_active pane_command pane_full_command; do
 		dir="$(remove_first_char "$dir")"
 		pane_full_command="$(remove_first_char "$pane_full_command")"
+		# Only strip when guarded, so files saved before the guard existed
+		# keep their titles intact.  Upstream's pull/583 strips
+		# unconditionally, which eats the first character of every title in
+		# a save file written before the guard landed.
+		case "$pane_title" in
+			:*) pane_title="$(remove_first_char "$pane_title")" ;;
+		esac
 		if [ "$session_name" == "0" ]; then
 			restored_session_0_true
 		fi
