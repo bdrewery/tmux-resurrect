@@ -265,6 +265,21 @@ save_all() {
 	dump_windows >> "$resurrect_file_path"
 	dump_state   >> "$resurrect_file_path"
 	execute_hook "post-save-layout" "$resurrect_file_path"
+	# Check adapted from josh-stephens' unmerged
+	# https://github.com/tmux-plugins/tmux-resurrect/pull/583, with the
+	# message moved to main so an aborted save is not announced as a
+	# successful one.
+	#
+	# A dump with no window or pane lines means tmux answered nothing, not
+	# that there was nothing to save.  Discard it here, before the block
+	# below can point 'last' at a file that would restore an empty session
+	# over a good one.  The file is uniquely named per save, so dropping it
+	# leaves the previous save untouched.
+	if ! \grep -q '^window' "$resurrect_file_path" ||
+		! \grep -q '^pane' "$resurrect_file_path"; then
+		rm -f "$resurrect_file_path"
+		return 1
+	fi
 	if files_differ "$resurrect_file_path" "$last_resurrect_file"; then
 		ln -fs "$(basename "$resurrect_file_path")" "$last_resurrect_file"
 	else
@@ -285,15 +300,25 @@ show_output() {
 }
 
 main() {
+	local exit_status=0
 	if supported_tmux_version_ok; then
 		if show_output; then
 			start_spinner "Saving..." "Tmux environment saved!"
 		fi
-		save_all
+		save_all || exit_status="$?"
 		if show_output; then
-			stop_spinner
-			display_message "Tmux environment saved!"
+			if [ "$exit_status" -eq 0 ]; then
+				stop_spinner
+				display_message "Tmux environment saved!"
+			else
+				# stop_spinner sends SIGTERM, and the spinner traps it
+				# to announce success.  Bypass the trap so an aborted
+				# save cannot report itself as having worked.
+				kill -KILL "$SPINNER_PID" 2>/dev/null
+				display_message "tmux-resurrect: save aborted, tmux returned an incomplete dump"
+			fi
 		fi
 	fi
+	return "$exit_status"
 }
 main
