@@ -109,9 +109,23 @@ tmux_socket() {
 cache_tmux_default_command() {
 	local default_shell="$(get_tmux_option "default-shell" "")"
 	local opt=""
-	if [ "$(basename "$default_shell")" == "bash" ]; then
-		opt="-l "
-	fi
+	# The "-l" is an option to the exec builtin, not a flag to the shell: it
+	# places a dash in argv[0], which is how tmux itself starts default-shell
+	# as a login shell.  Only bash and zsh implement it.  A POSIX sh aborts
+	# with "exec: -l: not found" and the restored pane dies with status 127,
+	# which is why 1160c1d narrowed an unconditional "-l" down to bash.  zsh
+	# was collateral damage: it does support the option, and without it every
+	# restored pane is a non-login shell that never reads .zprofile.
+	#
+	# tmux runs the pane command with `default-shell -c`, so the shell that
+	# has to understand "exec -l" is default-shell itself -- hence the test
+	# below is on default-shell rather than on whatever is running this.
+	#
+	# An equivalent fix is pending upstream, unmerged as of this commit:
+	#   https://github.com/tmux-plugins/tmux-resurrect/pull/496
+	case "$(basename "$default_shell")" in
+		bash|zsh) opt="-l " ;;
+	esac
 	export TMUX_DEFAULT_COMMAND="$(get_tmux_option "default-command" "$opt$default_shell")"
 }
 
