@@ -85,9 +85,17 @@ pane_contents_create_archive() {
 		gzip > "$(pane_contents_archive_file)"
 }
 
+# Clear what an earlier restore left behind before extracting, so a pane whose
+# contents were not saved this time cannot pick up an older capture.  This used
+# to happen at the end of restore instead, which raced the panes' own `cat` of
+# these files: on a slow filesystem such as NFS, or with a shell that starts
+# slowly, the files were gone before the panes read them.  Deferring cleanup
+# was proposed upstream, unmerged as of this commit:
+#   https://github.com/tmux-plugins/tmux-resurrect/pull/528
 pane_content_files_restore_from_archive() {
 	local archive_file="$(pane_contents_archive_file)"
 	if [ -f "$archive_file" ]; then
+		rm -f "$(pane_contents_dir "restore")"/*
 		mkdir -p "$(pane_contents_dir "restore")"
 		gzip -d < "$archive_file" |
 			tar xf - -C "$(resurrect_dir)/restore/"
