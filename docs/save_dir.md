@@ -16,10 +16,10 @@ Only the following variables and special chars are allowed:
 
 ### Staging dir
 
-Pane contents are kept as an archive in the save dir.  On restore, the
-per-pane files are unpacked into a private directory created with `mktemp -d`
-under a staging dir, rather than into the save dir, which may be on a slow
-network filesystem.  The staging dir defaults to `$TMPDIR`, or `/tmp` if that
+Pane contents are kept as an archive in the save dir.  The per-pane files are
+captured into, and on restore unpacked into, a private directory created with
+`mktemp -d` under a staging dir, rather than into the save dir, which may be on
+a slow network filesystem.  The staging dir defaults to `$TMPDIR`, or `/tmp` if that
 is unset.  Change it with:
 
     set -g @resurrect-staging-dir '/some/local/path'

@@ -11,6 +11,7 @@ RESURRECT_FILE_EXTENSION="txt"
 _RESURRECT_DIR=""
 _RESURRECT_FILE_PATH=""
 _RESTORE_DIR=""
+_SAVE_DIR=""
 staging_dir_option="@resurrect-staging-dir"
 
 d=$'\t'
@@ -83,7 +84,7 @@ is_session_grouped() {
 # pane content file helpers
 
 pane_contents_create_archive() {
-	tar cf - -C "$(resurrect_dir)/save/" ./pane_contents/ |
+	tar cf - -C "$_SAVE_DIR" ./pane_contents/ |
 		gzip > "$(pane_contents_archive_file)"
 }
 
@@ -193,7 +194,7 @@ pane_contents_dir() {
 	if [ "$1" = "restore" ]; then
 		echo "$_RESTORE_DIR/pane_contents/"
 	else
-		echo "$(resurrect_dir)/$1/pane_contents/"
+		echo "$_SAVE_DIR/pane_contents/"
 	fi
 }
 

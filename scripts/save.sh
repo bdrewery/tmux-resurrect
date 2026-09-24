@@ -247,6 +247,24 @@ dump_pane_contents() {
 		done
 }
 
+remove_save_dir() {
+	[ -n "$_SAVE_DIR" ] && rm -rf "$_SAVE_DIR"
+	_SAVE_DIR=""
+}
+
+# The per-pane files are only needed until they are in the archive, so they are
+# captured into a private mktemp directory rather than into the resurrect dir,
+# which may be on NFS.  The trap removes it if the save dies partway; before,
+# a save that died left its files behind for the next save to archive.
+dump_pane_contents_archive() {
+	_SAVE_DIR="$(staging_mktemp "save")" || return
+	trap remove_save_dir EXIT
+	mkdir "$_SAVE_DIR/pane_contents"
+	dump_pane_contents
+	pane_contents_create_archive
+	remove_save_dir
+}
+
 remove_old_backups() {
 	# remove resurrect files older than 30 days (default), but keep at least 5 copies of backup.
 	local delete_after="$(get_tmux_option "$delete_backup_after_option" "$default_delete_backup_after")"
@@ -286,10 +304,7 @@ save_all() {
 		rm "$resurrect_file_path"
 	fi
 	if capture_pane_contents_option_on; then
-		mkdir -p "$(pane_contents_dir "save")"
-		dump_pane_contents
-		pane_contents_create_archive
-		rm "$(pane_contents_dir "save")"/*
+		dump_pane_contents_archive
 	fi
 	remove_old_backups
 	execute_hook "post-save-all"
