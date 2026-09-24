@@ -13,3 +13,15 @@ expected:
 
 Only the following variables and special chars are allowed:
 `$HOME`, `$HOSTNAME`, and `~`.
+
+### Staging dir
+
+Pane contents are kept as an archive in the save dir.  The per-pane files are
+captured into, and on restore unpacked into, a private directory created with
+`mktemp -d` under a staging dir, rather than into the save dir, which may be on
+a slow network filesystem.  The staging dir defaults to `$TMPDIR`, or `/tmp` if that
+is unset.  Change it with:
+
+    set -g @resurrect-staging-dir '/some/local/path'
+
+The same variables as `@resurrect-dir` are allowed.

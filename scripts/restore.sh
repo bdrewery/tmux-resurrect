@@ -133,8 +133,27 @@ tmux_default_command() {
 	echo "$TMUX_DEFAULT_COMMAND"
 }
 
+# The pane command runs asynchronously inside the new pane, some time after
+# tmux returns from new-window/split-window: tmux has to fork, exec
+# default-shell and have it open the file.  Each pane therefore removes its own
+# contents file once it has read it, rather than main removing them all at the
+# end of the restore.  rmdir only succeeds for whichever pane empties the
+# restore directory last, which takes the directory with it.  A directory a
+# pane never got to is cleared by a later restore.
 pane_creation_command() {
-	echo "cat '$(pane_contents_file "restore" "${1}:${2}.${3}")'; exec $(tmux_default_command)"
+	local file="$(shell_quote "$(pane_contents_file "restore" "${1}:${2}.${3}")")"
+	local dir="$(shell_quote "$_RESTORE_DIR")"
+	echo "cat $file; rm -f $file; rmdir $dir/pane_contents $dir 2>/dev/null; exec $(tmux_default_command)"
+}
+
+# Single-quotes $1 for default-shell, which runs the pane command.  The path
+# holds the session name, which may itself contain a quote: left alone, that
+# ends the quoting early and the rest of the name becomes shell words, now
+# including arguments to rm.  An embedded quote is closed, escaped and
+# reopened ('\''), which sh, bash, zsh and fish all read back as one quote;
+# printf %q is avoided because it can emit bash-only $'...' quoting.
+shell_quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
 new_window() {
@@ -376,14 +395,6 @@ restore_active_and_alternate_sessions() {
 	done < $(last_resurrect_file)
 }
 
-# A cleanup that happens after 'restore_all_panes' seems to fix fish shell
-# users' restore problems.
-cleanup_restored_pane_contents() {
-	if is_restoring_pane_contents; then
-		rm "$(pane_contents_dir "restore")"/*
-	fi
-}
-
 # restore_window_properties feeds select-layout the saved layout string, which
 # carries absolute cell geometry.  Restoring into a client smaller than the one
 # that saved it leaves panes sized for the old terminal: a pane ends up wider
@@ -424,7 +435,6 @@ main() {
 		restore_grouped_sessions  # also restores active and alt windows for grouped sessions
 		restore_active_and_alternate_windows
 		restore_active_and_alternate_sessions
-		cleanup_restored_pane_contents
 		refit_restored_windows
 		execute_hook "post-restore-all"
 		stop_spinner
