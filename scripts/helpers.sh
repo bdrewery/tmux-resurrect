@@ -10,6 +10,8 @@ RESURRECT_FILE_PREFIX="tmux_resurrect"
 RESURRECT_FILE_EXTENSION="txt"
 _RESURRECT_DIR=""
 _RESURRECT_FILE_PATH=""
+_RESTORE_DIR=""
+staging_dir_option="@resurrect-staging-dir"
 
 d=$'\t'
 
@@ -85,21 +87,49 @@ pane_contents_create_archive() {
 		gzip > "$(pane_contents_archive_file)"
 }
 
-# Clear what an earlier restore left behind before extracting, so a pane whose
-# contents were not saved this time cannot pick up an older capture.  This used
-# to happen at the end of restore instead, which raced the panes' own `cat` of
-# these files: on a slow filesystem such as NFS, or with a shell that starts
-# slowly, the files were gone before the panes read them.  Deferring cleanup
-# was proposed upstream, unmerged as of this commit:
+# Each restore unpacks into a directory of its own from mktemp, so a pane
+# whose contents were not saved this time cannot pick up an older capture, and
+# nothing from a previous restore has to be cleared first.  The panes empty and
+# remove the directory as they read it (see pane_creation_command).  Removing
+# the files at the end of restore instead raced the panes' own `cat` of them:
+# on a slow filesystem such as NFS, or with a shell that starts slowly, the
+# files were gone before the panes read them.  Deferring that cleanup was
+# proposed upstream, unmerged as of this commit:
 #   https://github.com/tmux-plugins/tmux-resurrect/pull/528
 pane_content_files_restore_from_archive() {
 	local archive_file="$(pane_contents_archive_file)"
 	if [ -f "$archive_file" ]; then
-		rm -f "$(pane_contents_dir "restore")"/*
-		mkdir -p "$(pane_contents_dir "restore")"
+		remove_legacy_restore_dir
+		remove_stale_restore_dirs
+		_RESTORE_DIR="$(staging_mktemp "restore")" || return
+		mkdir "$_RESTORE_DIR/pane_contents"
 		gzip -d < "$archive_file" |
-			tar xf - -C "$(resurrect_dir)/restore/"
+			tar xf - -C "$_RESTORE_DIR"
 	fi
+}
+
+# Restore used to unpack into <resurrect-dir>/restore, which nothing reads any
+# more.  Drop what an older version left there.
+remove_legacy_restore_dir() {
+	local legacy="$(resurrect_dir)/restore"
+	rm -f "$legacy/pane_contents"/*
+	rmdir "$legacy/pane_contents" "$legacy" 2>/dev/null
+}
+
+# A restore directory outlives restore.sh until its last pane has read its
+# file.  One whose panes never ran, say because they were killed first or
+# were not recreated, is left behind; clear those out once they are an hour
+# old, which no restore still being read from can be.
+#
+# -mindepth 1 keeps the staging dir itself out of it, whatever it is named.
+# Without a socket name the pattern would match every socket's directories,
+# so skip the sweep rather than guess.
+remove_stale_restore_dirs() {
+	local socket_name
+	socket_name="$(staging_socket_name)" || return 0
+	find "$(staging_dir)" -mindepth 1 -maxdepth 1 -type d -user "$(id -u)" \
+		-name "tmux-resurrect-restore-${socket_name}.*" -mmin +60 \
+		-exec rm -rf {} + 2>/dev/null
 }
 
 # path helpers
@@ -125,12 +155,46 @@ resurrect_file_path() {
 }
 _RESURRECT_FILE_PATH="$(resurrect_file_path)"
 
+# Parent of the per-run scratch directories holding the per-pane contents
+# files.  They are kept off @resurrect-dir: that is often on NFS, where every
+# per-pane file costs round trips, and only the archive has to persist there.
+staging_dir() {
+	local path="$(get_tmux_option "$staging_dir_option" "${TMPDIR:-/tmp}")"
+	# same expansions as @resurrect-dir
+	echo "$path" | sed "s,\$HOME,$HOME,g; s,\$HOSTNAME,$(hostname),g; s,\~,$HOME,g"
+}
+
+# The tmux socket name, made safe for a file name, so that the scratch
+# directories of servers on different sockets can be told apart.  Fails if
+# tmux does not say.
+staging_socket_name() {
+	local socket_path="$(tmux display-message -p '#{socket_path}' 2>/dev/null)"
+	[ -n "$socket_path" ] || return 1
+	basename "$socket_path" | tr -c 'A-Za-z0-9._\n-' '_'
+}
+
+# A fresh private directory for one save or restore.  mktemp creates it under
+# a name nobody could have predicted and fails rather than reuse something
+# already there, so a shared /tmp cannot be used to plant a symlink on us.
+staging_mktemp() {
+	local kind="$1"
+	local socket_name
+	# "unknown" rather than "default", which is tmux's own default socket
+	# name and would put these in reach of that socket's sweep.
+	socket_name="$(staging_socket_name)" || socket_name="unknown"
+	mktemp -d "$(staging_dir)/tmux-resurrect-${kind}-${socket_name}.XXXXXX"
+}
+
 last_resurrect_file() {
 	echo "$(resurrect_dir)/last"
 }
 
 pane_contents_dir() {
-	echo "$(resurrect_dir)/$1/pane_contents/"
+	if [ "$1" = "restore" ]; then
+		echo "$_RESTORE_DIR/pane_contents/"
+	else
+		echo "$(resurrect_dir)/$1/pane_contents/"
+	fi
 }
 
 pane_contents_file() {
@@ -141,7 +205,8 @@ pane_contents_file() {
 
 pane_contents_file_exists() {
 	local pane_id="$1"
-	[ -f "$(pane_contents_file "restore" "$pane_id")" ]
+	[ -n "$_RESTORE_DIR" ] &&
+		[ -f "$(pane_contents_file "restore" "$pane_id")" ]
 }
 
 pane_contents_archive_file() {

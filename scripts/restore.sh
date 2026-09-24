@@ -137,11 +137,13 @@ tmux_default_command() {
 # tmux returns from new-window/split-window: tmux has to fork, exec
 # default-shell and have it open the file.  Each pane therefore removes its own
 # contents file once it has read it, rather than main removing them all at the
-# end of the restore.  A leftover from a pane that never got to run is cleared
-# before the next restore extracts the archive.
+# end of the restore.  rmdir only succeeds for whichever pane empties the
+# restore directory last, which takes the directory with it.  A directory a
+# pane never got to is cleared by a later restore.
 pane_creation_command() {
 	local file="$(shell_quote "$(pane_contents_file "restore" "${1}:${2}.${3}")")"
-	echo "cat $file; rm -f $file; exec $(tmux_default_command)"
+	local dir="$(shell_quote "$_RESTORE_DIR")"
+	echo "cat $file; rm -f $file; rmdir $dir/pane_contents $dir 2>/dev/null; exec $(tmux_default_command)"
 }
 
 # Single-quotes $1 for default-shell, which runs the pane command.  The path
